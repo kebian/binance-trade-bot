@@ -29,7 +29,7 @@ class Strategy(AutoTrader):
         print(
             f"{datetime.now()} - CONSOLE - INFO - I am scouting the best trades. "
             f"Current coin: {current_coin + self.config.BRIDGE} ",
-            end="\r",
+            flush=True, end="\r"
         )
 
         current_coin_price = get_market_ticker_price_from_list(all_tickers, current_coin + self.config.BRIDGE)
@@ -40,6 +40,7 @@ class Strategy(AutoTrader):
 
         self._jump_to_best_coin(current_coin, current_coin_price, all_tickers)
         self.bridge_scout()
+
 
     def bridge_scout(self):
         current_coin = self.db.get_current_coin()

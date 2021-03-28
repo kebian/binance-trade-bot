@@ -36,6 +36,7 @@ class BinanceAPIManager:
         if not self.get_using_bnb_for_fees():
             return base_fee
         # The discount is only applied if we have enough BNB to cover the fee
+        # _sell_quantity and _buy_quantity are time consuming
         amount_trading = (
             self._sell_quantity(origin_coin.symbol, target_coin.symbol)
             if selling
@@ -54,21 +55,30 @@ class BinanceAPIManager:
             return base_fee * 0.75
         return base_fee
 
+    # Rob
+    @cached(cache=TTLCache(maxsize=2000, ttl=1))
     def get_all_market_tickers(self):
         """
         Get ticker price of all coins
         """
         return self.binance_client.get_all_tickers()
 
+    # Rob
+    @cached(cache=TTLCache(maxsize=2000, ttl=2))
+    def get_symbol_ticker(self):
+        return self.binance_client.get_symbol_ticker()
+
     def get_market_ticker_price(self, ticker_symbol: str):
         """
         Get ticker price of a specific coin
         """
-        for ticker in self.binance_client.get_symbol_ticker():
+        for ticker in self.get_symbol_ticker():
             if ticker["symbol"] == ticker_symbol:
                 return float(ticker["price"])
         return None
 
+    # Rob
+    @cached(cache=TTLCache(maxsize=2000, ttl=5))
     def get_currency_balance(self, currency_symbol: str):
         """
         Get balance of a specific coin
@@ -195,7 +205,6 @@ class BinanceAPIManager:
 
     def _sell_quantity(self, origin_symbol: str, target_symbol: str, origin_balance: float = None):
         origin_balance = origin_balance or self.get_currency_balance(origin_symbol)
-
         origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
         return math.floor(origin_balance * 10 ** origin_tick) / float(10 ** origin_tick)
 
