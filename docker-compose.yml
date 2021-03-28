@@ -1,31 +1,33 @@
 version: "3"
 
 services:
-  crypto-trading:
-    image: edeng23/binance-trade-bot
-    container_name: binance_trader
+  tradebot:
+    build: .
+    restart: unless-stopped
     volumes:
-      - ./user.cfg:/app/user.cfg
-      - ./data:/app/data
-      - ./logs:/app/logs
+#      - ./user.cfg:/app/user.cfg
+#      - ./data:/app/data
+#      - ./logs:/app/logs
+      - ./:/app
     command: python -m binance_trade_bot
 
   api:
-    image: edeng23/binance-trade-bot
-    container_name: binance_trader_api
+    build: .
+    restart: unless-stopped
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./user.cfg:/app/user.cfg
+      #- ./data:/app/data
+      #- ./logs:/app/logs
+      #- ./user.cfg:/app/user.cfg
+      - ./:/app
     ports:
       - 5123:5123
     command: gunicorn binance_trade_bot.api_server:app -k eventlet -w 1 --threads 1 -b 0.0.0.0:5123
     depends_on:
-      - crypto-trading
+      - tradebot
 
   sqlitebrowser:
     image: ghcr.io/linuxserver/sqlitebrowser
-    container_name: sqlitebrowser
+    restart: unless-stopped
     environment:
       - PUID=1000
       - PGID=1000
