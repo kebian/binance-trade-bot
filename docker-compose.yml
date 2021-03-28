@@ -16,6 +16,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
+      - ./user.cfg:/app/user.cfg
     ports:
       - 5123:5123
     command: gunicorn binance_trade_bot.api_server:app -k eventlet -w 1 --threads 1 -b 0.0.0.0:5123
