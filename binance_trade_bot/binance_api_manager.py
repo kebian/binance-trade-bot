@@ -22,8 +22,9 @@ class BinanceAPIManager:
         )
         self.db = db
         self.logger = logger
+        self.balances = {}
 
-    @cached(cache=TTLCache(maxsize=1, ttl=43200))
+    @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_trade_fees(self) -> Dict[str, float]:
         return {ticker["symbol"]: ticker["taker"] for ticker in self.binance_client.get_trade_fee()["tradeFee"]}
 
@@ -31,15 +32,16 @@ class BinanceAPIManager:
     def get_using_bnb_for_fees(self):
         return self.binance_client.get_bnb_burn_spot_margin()["spotBNBBurn"]
 
-    def get_fee(self, origin_coin: Coin, target_coin: Coin, selling: bool):
+    @cached(cache=TTLCache(maxsize=2000, ttl=10))
+    def get_fee(self, origin_coin: Coin, target_coin: Coin, selling: bool, use_loaded_balances: False):
         base_fee = self.get_trade_fees()[origin_coin + target_coin]
         if not self.get_using_bnb_for_fees():
             return base_fee
         # The discount is only applied if we have enough BNB to cover the fee
         amount_trading = (
-            self._sell_quantity(origin_coin.symbol, target_coin.symbol)
+            self._sell_quantity(origin_coin.symbol, target_coin.symbol, use_loaded_balances = use_loaded_balances)
             if selling
-            else self._buy_quantity(origin_coin.symbol, target_coin.symbol)
+            else self._buy_quantity(origin_coin.symbol, target_coin.symbol, use_loaded_balances = use_loaded_balances)
         )
         fee_amount = amount_trading * base_fee * 0.75
         if origin_coin.symbol == "BNB":
@@ -49,7 +51,7 @@ class BinanceAPIManager:
             if origin_price is None:
                 return base_fee
             fee_amount_bnb = fee_amount * origin_price
-        bnb_balance = self.get_currency_balance("BNB")
+        bnb_balance = self.get_cached_currency_balance("BNB")
         if bnb_balance >= fee_amount_bnb:
             return base_fee * 0.75
         return base_fee
@@ -75,14 +77,27 @@ class BinanceAPIManager:
         return None
 
     @cached(cache=TTLCache(maxsize=2000, ttl=5))
+    def get_cached_currency_balance(self, currency_symbol: str):
+        """
+        Get balance of a specific coin, using cache
+        """
+        return self.get_currency_balance(currency_symbol)
+
     def get_currency_balance(self, currency_symbol: str):
         """
-        Get balance of a specific coin
+        Get balance of a specific coin without a cache
         """
         for currency_balance in self.binance_client.get_account()["balances"]:
             if currency_balance["asset"] == currency_symbol:
                 return float(currency_balance["free"])
         return None
+
+    def load_balances(self):
+        for currency_balance in self.binance_client.get_account()["balances"]:
+            self.balances[currency_balance["asset"]] = float(currency_balance["free"])
+
+    def get_loaded_balance(self, currency_symbol: str):
+        return self.balances[currency_symbol] or 0
 
     def retry(self, func, *args, **kwargs):
         time.sleep(1)
@@ -113,6 +128,8 @@ class BinanceAPIManager:
 
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_min_notional(self, origin_symbol: str, target_symbol: str):
+        min_notational = self.get_symbol_filter(origin_symbol, target_symbol, "MIN_NOTIONAL")["minNotional"]
+        print(f"MIN_NOTATIONAL for {origin_symbol}/{target_symbol} is {min_notational}", flush=True)
         return float(self.get_symbol_filter(origin_symbol, target_symbol, "MIN_NOTIONAL")["minNotional"])
 
     def wait_for_order(self, origin_symbol, target_symbol, order_id):
@@ -145,9 +162,10 @@ class BinanceAPIManager:
         return self.retry(self._buy_alt, origin_coin, target_coin, all_tickers)
 
     def _buy_quantity(
-        self, origin_symbol: str, target_symbol: str, target_balance: float = None, from_coin_price: float = None
+        self, origin_symbol: str, target_symbol: str, target_balance: float = None, from_coin_price: float = None, use_loaded_balances: bool = False
     ):
-        target_balance = target_balance or self.get_currency_balance(target_symbol)
+        if not target_balance:
+            target_balance = self.get_loaded_balance(target_symbol) if use_loaded_balances else self.get_currency_balance(target_symbol)
         from_coin_price = from_coin_price or get_market_ticker_price_from_list(
             self.get_all_market_tickers(), origin_symbol + target_symbol
         )
@@ -199,8 +217,9 @@ class BinanceAPIManager:
     def sell_alt(self, origin_coin: Coin, target_coin: Coin):
         return self.retry(self._sell_alt, origin_coin, target_coin)
 
-    def _sell_quantity(self, origin_symbol: str, target_symbol: str, origin_balance: float = None):
-        origin_balance = origin_balance or self.get_currency_balance(origin_symbol)
+    def _sell_quantity(self, origin_symbol: str, target_symbol: str, origin_balance: float = None, use_loaded_balances: bool = False):
+        if not origin_balance:
+            origin_balance = self.get_loaded_balance(origin_symbol) if use_loaded_balances else self.get_currency_balance(origin_symbol)
         origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
         return math.floor(origin_balance * 10 ** origin_tick) / float(10 ** origin_tick)
 

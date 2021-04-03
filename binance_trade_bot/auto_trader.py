@@ -99,6 +99,9 @@ class AutoTrader:
         """
         ratio_dict: Dict[Pair, float] = {}
 
+        self.manager.load_balances()
+
+        # pair.ratio is updated with call to update_trade_threshold via transaction_through_bridge
         for pair in self.db.get_pairs_from(coin):
             optional_coin_price = get_market_ticker_price_from_list(all_tickers, pair.to_coin + self.config.BRIDGE)
 
@@ -113,14 +116,14 @@ class AutoTrader:
             # Obtain (current coin)/(optional coin)
             coin_opt_coin_ratio = coin_price / optional_coin_price
 
-            transaction_fee = self.manager.get_fee(pair.from_coin, self.config.BRIDGE, True) + self.manager.get_fee(
-                pair.to_coin, self.config.BRIDGE, False
+            transaction_fee = self.manager.get_fee(pair.from_coin, self.config.BRIDGE, True, use_loaded_balances=True) + self.manager.get_fee(
+                pair.to_coin, self.config.BRIDGE, False, use_loaded_balances=True
             )
 
-            ratio_dict[pair] = (
-                coin_opt_coin_ratio - transaction_fee * self.config.SCOUT_MULTIPLIER * coin_opt_coin_ratio
-            ) - pair.ratio
-            print(f"Ratio for {pair.to_coin} is {ratio_dict[pair]}", flush=True)
+            ratio = coin_opt_coin_ratio - transaction_fee * self.config.SCOUT_MULTIPLIER * coin_opt_coin_ratio
+            ratio_dict[pair] = ratio - pair.ratio
+            percentage_of_target = (ratio / pair.ratio) * 100
+            print(f"Ratio for {pair.to_coin} is {ratio_dict[pair]} ({percentage_of_target}%)", flush=True)
         return ratio_dict
 
     def _jump_to_best_coin(self, coin: Coin, coin_price: float, all_tickers):
@@ -155,7 +158,7 @@ class AutoTrader:
             if not any(v > 0 for v in ratio_dict.values()):
                 # There will only be one coin where all the ratios are negative. When we find it, buy it if we can
                 if bridge_balance > self.manager.get_min_notional(coin.symbol, self.config.BRIDGE.symbol):
-                    self.logger.info(f"Will be purchasing {coin} using bridge coin")
+                    self.logger.info(f"Will be purchasing {bridge_balance} x {coin} using remaining bridge coin")
                     self.manager.buy_alt(coin, self.config.BRIDGE, all_tickers)
                     return coin
         return None

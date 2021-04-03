@@ -10,7 +10,7 @@ class Strategy(AutoTrader):
         all_tickers = self.manager.get_all_market_tickers()
 
         for coin in self.db.get_coins():
-            current_coin_balance = self.manager.get_currency_balance(coin.symbol)
+            current_coin_balance = self.manager.get_cached_currency_balance(coin.symbol)
             coin_price = get_market_ticker_price_from_list(all_tickers, coin + self.config.BRIDGE)
 
             if coin_price is None:
